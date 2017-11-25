@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+		<title>Arduino Pong Game</title>
+		<style>
+		html,
+		body {
+			font-family: "Press Start 2P", recursive;
+			font: 12px "Press Start 2P";
+			overflow: hidden;
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			background: #111;
+			color: #fff;
+			text-shadow: 0 3px 0 rgba(0, 0, 0, 0.4);
+			background: -webkit-radial-gradient(#141414, #000);
+			background: radial-gradient(#141414, #000);
+		}
+		#game {
+			cursor: none;
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			-webkit-transform: translate(-50%, -50%);
+			transform: translate(-50%, -50%);
+			width: 400px;
+			overflow: hidden;
+			box-shadow: 0 50px 100px rgba(0, 0, 0, 0.9);
+			border: 1px solid rgba(206, 206, 206, 0.2);
+		}
+		#canvas {
+			background: -webkit-linear-gradient(#0095DD, #000);
+			background: linear-gradient(#0095DD, #000);
+		}
+		#score,
+		#highestscore {
+			position: absolute;
+			top: 15px;
+		}
+		#score {
+			left: 10px;
+		}
+		#highestscore {
+			right: 10px;
+		}
+		#lives {
+			position: absolute;
+			bottom: 10px;
+			right: 10px;
+		}
+		#lives span {
+			font-size: 8px;
+		}
+		.message {
+			position: absolute;
+			left: 0;
+			bottom: 150px;
+			right: 0;
+			text-align: center;
+			opacity: 0;
+			-webkit-transform: translateY(100px) scale(0);
+			transform: translateY(100px) scale(0);
+			-webkit-transition: .25s all;
+			transition: .25s all;
+		}
+		.message h2 {
+			font-size: 16px;
+		}
+		.gameOver.message h2 {
+			font-size: 24px;
+		}
+		.start.message {
+			bottom: 300px;
+			opacity: 1;
+			-webkit-transform: translateY(0) scale(1);
+			transform: translateY(0) scale(1);
+		}
+		.message-shown {
+			opacity: 1;
+			-webkit-transform: translateY(0) scale(1);
+			transform: translateY(0) scale(1);
+		}
+		</style>
+		<script src="http://cdn.bootcss.com/jquery/2.2.2/jquery.min.js"></script>
+		<script src="https://cdn.socket.io/socket.io-1.4.5.js"></script>
+	</head>
+	<body>
+		<div id="game">
+			<canvas id="canvas" width="400" height="650"></canvas>
+
+			<div id="score">
+				SCORE:<span>000000</span>
+			</div>
+
+			<div id="highestscore">
+				HIGHEST:<span>000000</span>
+			</div>
+
+			<div id="lives">
+				♥ <span> 5</span>
+			</div>
+
+			<div id="message" class="start message">
+				<h2>Arduino Pong Game</h2>
+				<p>Start</p>
+			</div>
+		</div>
+		<script>
+		(function() {
+			// Use socket.io to receive/emit data from/to the server
+			var socket = io();
+			// The array contains maps for each level of the game
+			// The symbol shown below indicates the color of the brick at that position
+			var map = [
+				['             ',
+					'  1       1  ',
+					' 12       21 ',
+					'    *   *    ',
+					'   43b b34   ',
+					'  *3234323*  ',
+					'  *4  3  4*  ',
+					'  *444b444*  ',
+					'  *3b4b4b3*  ',
+					'   34b4b43   ',
+					'   34bbb43   ',
+					'    43434    ',
+					'     444     ',
+					' 12   b   21 ',
+					'  1       1  ',
+				],
+				
+				['             ',
+					'             ',
+					'   **   **   ',
+					'  *00* *00*  ',
+					' *0000*0000* ',
+					' *111111111* ',
+					' *222222222* ',
+					' *333333333* ',
+					'  *3344333*  ',
+					'  *3444433*  ',
+					'   *44443*   ',
+					'   *44443*   ',
+					'    *443*    ',
+					'     *3*     ',
+					'      *      ',
+				],
+
+				['   0     0   ',
+					'   0     0   ',
+					'    0   0    ',
+					'    0   0    ',
+					'   ggggggg   ',
+					'   2222222   ',
+					'  333333333  ',
+					'  444444444  ',
+					' 4* 44*44 *4 ',
+					' ** 4***4 ** ',
+					' **44***44** ',
+					' **444*444** ',
+					' 4 4444444 4 ',
+					' 3 3     3 3 ',
+					' g 2     2 g ',
+					'    gg gg    ',
+					'    ** **    ',
+				],
+
+				['      b     ',
+					'     bbb     ',
+					'    4 b 4    ',
+					'   3  b  3   ',
+					'  2   b   2  ',
+					' g    b    g ',
+					'0g   b b   g0',
+					'0 2 4   4 2 0',
+					'0  3     3  0',
+					'0 2 4   4 2 0',
+					'0g   b b   g0 ',
+					' g    b    g ',
+					'  2   b   2  ',
+					'   3  b  3   ',
+					'    4 b 4    ',
+					'     bbb     ',
+					'             ',
+				],
+
+				['     000    ',
+					'   0000000   ',
+					'  ggggggggg  ',
+					'  222222222  ',
+					' bbb bbb bbb ',
+					' *** *** *** ',
+					' *** *** *** ',
+					' 444 444 444 ',
+					' 33333333333 ',
+					' 2 2222222 2 ',
+					' g  22222  g ',
+					' gg  222  gg ',
+					'  gg     ggg  ',
+					'  2gg   gg2  ',
+					'   2ggggg2   ',
+					'    22222    ',
+					'             ',
+				],
+
+				['00000   00000',
+					' ggggg ggggg ',
+					'  222222222  ',
+					'   3333333   ',
+					'4   44444   4',
+					'**   ***   **',
+					'444   0   444',
+					'3333     3333',
+					'22222   22222',
+					' 33333 33333 ',
+					'  444444444  ',
+					'   *******   ',
+					'0   00000   0',
+					'gg   ggg   gg',
+					'ggg   2   ggg',
+				],
+			];
+			// Colors for each position
+			var colors = {
+					'0': '#82f966',
+					'1': '#99f783',
+					'2': '#aff79e',
+					'3': '#cffcc4',
+					'4': '#e7f9e3',
+				
+					'r': '#f8c2f9',
+					'g': '#75db74',
+					'b': '#80D8FF',
+					'y': '#fcf592',
+					'o': '#ffe1a5',
+				},
+				defaultColor = '#d6effc';
+
+			var $ = function(selector) {
+				return document.querySelector(selector);
+			};
+			// Set up HTML 5 canvas
+			var canvas = document.getElementById('canvas'),
+				ctx = canvas.getContext('2d');
+			// Set up the speed of the ball, brick's properties
+			var paused = true,
+				speed = 2,
+				padding = 1,
+				bricksWidth = 0,
+				bricksHeight = 18,
+				bricks,
+				level, score, lives,
+				highestscore = localStorage.getItem('highestscore') || 0;
+			//Initialise the ball
+			var ball = {
+				rad: 3,
+				x: 0,
+				y: 0,
+				speedX: 0,
+				speedY: 0,
+			};
+			//Initialise the paddle
+			var paddle = {
+				w: 60,
+				h: 4,
+				x: (canvas.width / 2) - 30,
+				y: canvas.height - 40,
+			};
+			// Start the animation, automatically set the time iterval
+			window.requestAnimationFrame = window.requestAnimationFrame || window.mozRequestAnimationFrame || window.webkitRequestAnimationFrame || window.msRequestAnimationFrame;
+			// send a message to start the buzzer
+			function playSound() {
+				socket.emit('beep');
+			}
+			//draw the layout of each brick in every level
+			function drawLevel() {
+				var index, currentMap, row, column, color;
+				// Get the current map for the current level
+				index = (level % map.length || map.length) - 1;
+				currentMap = map[index];
+				bricks = [];
+
+				for (row = 0; row < currentMap.length; row++) {
+					for (column = 0; column < 13; column++) {
+
+						if (!currentMap[row][column] || currentMap[row][column] === ' ') {
+							continue;
+						}
+
+						bricksWidth = (canvas.width - padding * 2) / 13;
+
+						color = colors[currentMap[row][column]];
+						if (!color) {
+							color = defaultColor;
+						}
+
+						bricks.push({
+							x: padding * 2 + (bricksWidth * column),
+							y: bricksHeight * row + 60,
+							w: bricksWidth - padding * 2,
+							h: bricksHeight - padding * 2,
+							color: color,
+						});
+					}
+				}
+			}
+
+			function resetBall() {
+				ball.x = (canvas.width / 2) - ball.rad;
+				ball.y = (canvas.height / 1.8) - ball.rad;
+				// generate random direction when starting/restarting the game
+				ball.speedX = speed * (Math.random()*2 - 1);
+				ball.speedY = speed;
+			}
+
+			function detectCollision() {
+
+				// Collision with paddle
+				// If the user hits the edge of the ball, there would be acceleration
+
+				if (ball.y + ball.rad >= paddle.y && ball.y + ball.rad <= paddle.y + paddle.h && ball.x >= paddle.x && ball.x <= paddle.x + paddle.w) {
+					playSound();
+					ball.speedY = -ball.speedY;
+					ball.speedX = (ball.x - (paddle.x + paddle.w / 2)) * 0.1;
+				}
+
+				// Collision with bricks
+
+				for (var i = 0; i < bricks.length; i++) {
+					var brick = bricks[i];
+
+					if (ball.y + ball.rad >= brick.y && ball.y - ball.rad <= brick.y + brick.h && ball.x + ball.rad >= brick.x && ball.x - ball.rad <= brick.x + brick.w) {
+						// When the ball hits the brick, we make buzzer play a sound and reverse its y direction
+						playSound();
+						ball.speedY = -ball.speedY;
+
+						score++;
+						bricks.splice(i, 1);
+						// When we hits all the bricks, go on to the next level
+						// And add three lives
+						if (bricks.length <= 0) {
+							level++;
+							lives += 3;
+							speed += 0.5;
+							startGame();
+						}
+
+						break;
+					}
+				}
+			}
+
+			function moveObjects() {
+				if (paused) {
+					return;
+				}
+
+				detectCollision();
+
+				ball.x += ball.speedX;
+				ball.y += ball.speedY;
+				//If the ball hits the vertical wall
+				if (ball.x - ball.rad <= 0 || ball.x + ball.rad >= canvas.width) {
+					ball.speedX = -ball.speedX;
+				}
+				//If the ball hits the top wall
+				if (ball.y - ball.rad <= 0) {
+					ball.speedY = -ball.speedY;
+				}
+				//If the ball falls down
+				if (ball.y + ball.rad >= canvas.height) {
+					lives--;
+
+					if (lives === 0) {
+						gameOver();
+					} else {
+						ready();
+					}
+
+					resetBall();
+				}
+			}
+
+			function displayScore(score) {
+				return Array(6 - String(score).length + 1).join('0') + score;
+			}
+
+			function updateObjects() {
+				$('#score span').textContent = displayScore(score);
+				$('#lives span').textContent = lives;
+
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+				
+				drawBall();
+				drawObject(paddle.x, paddle.y, paddle.w, paddle.h, colors[0]);
+
+				bricks.forEach(function(brick) {
+					drawObject(brick.x, brick.y, brick.w, brick.h, brick.color);
+				});
+			}
+
+			function drawObject(x, y, w, h, color) {
+				ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+				ctx.fillRect(x + bricksWidth / 2, y + bricksHeight, w, h);
+
+				ctx.fillStyle = color || '#fff';
+				ctx.fillRect(x, y, w, h);
+			}
+			
+			function drawBall(){
+				ctx.beginPath();
+				ctx.fillStyle = '#fff';
+				ctx.arc(ball.x, ball.y, ball.rad,0,Math.PI*2,false);
+				ctx.fill();
+			}
+
+			function refreshGame() {
+				requestAnimationFrame(refreshGame);
+				moveObjects();
+				updateObjects();
+			}
+
+			function hideMessage() {
+				$('#message').className = 'message';
+			}
+
+			function ready() {
+
+				paused = true;
+
+				$('#message h2').textContent = 'ROUND ' + level;
+				$('#message p').textContent = 'Push left button when ready!';
+				$('#message').className = 'message message-shown';
+
+				$('#highestscore span').textContent = displayScore(highestscore);
+			}
+
+			function gameOver() {
+				
+				paused = true;
+
+				if (score > highestscore) {
+					highestscore = score;
+					localStorage.setItem('highestscore', score);
+					socket.emit('win');
+				}else{
+					socket.emit('lose');
+				}
+
+				$('#message h2').textContent = 'GAME OVER';
+				$('#message p').textContent = 'Push Left Button to play again!';
+				$('#message').className = 'gameOver message message-shown';
+
+				$('#highestscore span').textContent = displayScore(highestscore);
+			}
+
+			function resetGame() {
+				level = 1;
+				score = 0;
+				lives = 5;
+				socket.emit('stop');
+			}
+
+			function startGame() {
+				resetBall();
+				drawLevel();
+				ready();
+			}
+			// If user presses the right button, the game pauses
+			socket.on('pause',function(){
+				paused = !paused;
+				hideMessage();
+			});
+			// If user presses the left button, the game starts
+			socket.on('start',function(){
+				if (lives === 0) {
+					resetGame();
+					startGame();
+					return;
+				}
+				
+				hideMessage();
+				paused = false;
+			});
+			// If user change the resistance of the potentiometer, the paddle moves
+			socket.on('movement',function(movedata){
+				// Convert reading from the potentiometer
+				var data = movedata * (canvas.width - paddle.w) / 1023; 
+				paddle.x = data;
+			});
+
+			resetGame();
+			startGame();
+			refreshGame();
+
+		})();
+		</script>
+	</body>
+</html>
